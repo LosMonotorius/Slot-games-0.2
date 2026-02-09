@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/brython@3.12.0/brython.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/brython@3.12.0/brython_stdlib.js"></script>
+    <title>Vault Cracker with Lodosgames</title>
+    <style>
+        :root {
+            --neon-gold: #ffd700;
+            --neon-red: #ff4444;
+            --bg-dark: #1a1a1a;
+        }
+        body {
+            background-color: var(--bg-dark);
+            color: white;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .game-card {
+            background: #2d2d2d;
+            padding: 2rem;
+            border-radius: 20px;
+            box-shadow: 0 0 30px rgba(0,0,0,0.5), 0 0 10px var(--neon-gold);
+            text-align: center;
+            max-width: 400px;
+        }
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 20px;
+            font-weight: bold;
+            background: #222;
+            padding: 10px;
+            border-radius: 10px;
+        }
+        .target-box {
+            font-size: 2rem;
+            letter-spacing: 5px;
+            color: var(--neon-gold);
+            margin: 15px 0;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+        }
+        .slot-container {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .slot-wrapper {
+            background: #444;
+            border-radius: 10px;
+            padding: 10px;
+            transition: 0.3s;
+        }
+        .slot-wrapper.locked {
+            background: #5c4d00;
+            box-shadow: inset 0 0 10px #ffd700;
+        }
+        .slot-window {
+            height: 80px;
+            width: 60px;
+            background: white;
+            border-radius: 5px;
+            overflow: hidden;
+            position: relative;
+        }
+        .slot-reel {
+            position: absolute;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        .number {
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            color: #333;
+            font-weight: bold;
+        }
+        button {
+            cursor: pointer;
+            transition: 0.2s;
+            border: none;
+            border-radius: 8px;
+        }
+        .spin-btn {
+            width: 100%;
+            padding: 15px;
+            font-size: 1.2rem;
+            background: linear-gradient(45deg, #ffd700, #ff8c00);
+            color: #000;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .spin-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .lock-btn {
+            margin-top: 10px;
+            width: 100%;
+            padding: 5px;
+            font-size: 0.8rem;
+            background: #666;
+            color: white;
+        }
+        .lock-btn.active { background: #ff4444; }
+        .message {
+            margin-top: 15px;
+            height: 20px;
+            font-weight: bold;
+            color: var(--neon-red);
+        }
+    </style>
+</head>
+<body onload="brython()">
+
+<div class="game-card">
+    <h3>SLOT OYUNU</h3>
+    
+    <div class="stats">
+        <div>💵<span id="vault">0</span></div>
+        <div>Deneme hakkı: <span id="attempts">0</span></div>
+    </div>
+
+    <div class="target-box">
+        HEDEF: <span id="target"></span>
+    </div>
+
+    <div id="slots" class="slot-container"></div>
+
+    <button id="spin" class="spin-btn">Çevir (25 🍪)</button>
+    <div id="msg" class="message"></div>
+</div>
+
+<script type="text/python">
+from browser import document, timer, html
+import random
+
+# --- KONFİGÜRASYON ---
+SLOT_HEIGHT = 80
+BASE_SPIN_COST = 25
+LOCK_EXTRA_COST = 15  # Her kilitli çark için ek maliyet
+WIN_REWARD = 1500
+
+class VaultGame:
+    def __init__(self):
+        self.vault = 1000
+        self.attempts = 15
+        self.target = []
+        self.slots = []
+        self.spinning = False
+        self.game_over = False
+        
+        document["spin"].bind("click", self.handle_action)
+        self.update_ui()
+        self.init_game()
+
+    def update_ui(self):
+        document["vault"].text = f"{self.vault:,}"
+        document["attempts"].text = self.attempts
+
+    def init_game(self):
+        self.attempts = 15
+        self.game_over = False
+        self.spinning = False
+        self.target = [random.randint(0, 9) for _ in range(3)]
+        
+        document["target"].text = "".join(map(str, self.target))
+        document["spin"].text = f"OYNA ({BASE_SPIN_COST} 💵)"
+        document["msg"].text = "2026 Lodosgames oyunları"
+        
+        document["slots"].clear()
+        self.slots = []
+
+        for _ in range(3):
+            reel = html.DIV(Class="slot-reel")
+            # Çarkın akıcı görünmesi için sayıları çoğaltıyoruz
+            numbers = [html.DIV(str(n % 10), Class="number") for n in range(40)]
+            reel <= numbers
+            
+            window = html.DIV(reel, Class="slot-window")
+            lock_btn = html.BUTTON("🔓 AÇIK", Class="lock-btn")
+            wrapper = html.DIV([window, lock_btn], Class="slot-wrapper")
+            
+            slot_data = {"reel": reel, "locked": False, "val": 0, "btn": lock_btn, "wrap": wrapper}
+            
+            # Lock butonu aksiyonu
+            lock_btn.bind("click", lambda ev, s=slot_data: self.toggle_lock(s))
+            
+            document["slots"] <= wrapper
+            self.slots.append(slot_data)
+
+    def toggle_lock(self, slot):
+        if self.spinning or self.game_over: return
+        
+        slot["locked"] = not slot["locked"]
+        slot["wrap"].classList.toggle("locked")
+        slot["btn"].classList.toggle("active")
+        slot["btn"].text = "🔒 KİLİTLİ" if slot["locked"] else "🔓 AÇIK"
+        
+        # Maliyeti dinamik güncelle
+        locks_count = sum(1 for s in self.slots if s["locked"])
+        current_cost = BASE_SPIN_COST + (locks_count * LOCK_EXTRA_COST)
+        document["spin"].text = f"Spin ({current_cost} 🍪)"
+
+    def handle_action(self, ev):
+        if self.game_over:
+            self.init_game()
+            self.update_ui()
+            return
+            
+        locks_count = sum(1 for s in self.slots if s["locked"])
+        cost = BASE_SPIN_COST + (locks_count * LOCK_EXTRA_COST)
+        
+        if self.vault < cost:
+            document["msg"].text = "❌ Yetersiz bakiye!"
+            return
+
+        if not self.spinning:
+            self.start_spin(cost)
+
+    def start_spin(self, cost):
+        self.spinning = True
+        self.vault -= cost
+        self.attempts -= 1
+        self.update_ui()
+        document["spin"].disabled = True
+        
+        for i, s in enumerate(self.slots):
+            if s["locked"]: continue
+            
+            s["val"] = random.randint(0, 9)
+            # Rastgele tur sayısı ekleyerek farklı zamanlarda durmalarını sağlıyoruz
+            extra_turns = 20 + (i * 5) 
+            target_pos = (extra_turns + s["val"]) * SLOT_HEIGHT
+            
+            s["reel"].style.transition = "none"
+            s["reel"].style.transform = "translateY(0)"
+            
+            # Brython'da DOM güncellemeleri için küçük bir gecikme gerekir
+            def animate(reel=s["reel"], pos=target_pos):
+                reel.style.transition = f"transform {1.2 + random.random()}s cubic-bezier(.45,.05,.55,.95)"
+                reel.style.transform = f"translateY(-{pos}px)"
+            
+            timer.set_timeout(animate, 50)
+
+        timer.set_timeout(self.check_result, 2500)
+
+    def check_result(self):
+        self.spinning = False
+        document["spin"].disabled = False
+        
+        win = all(self.slots[i]["val"] == self.target[i] for i in range(3))
+        
+        if win:
+            self.vault += WIN_REWARD
+            document["msg"].text = "💰 KAZANDIN! +1500 💵"
+            self.game_over = True
+            document["spin"].text = "TEKRAR"
+        elif self.attempts <= 0:
+            document["msg"].text = "💀 SİSTEM KİLİTLENDİ!"
+            self.game_over = True
+            document["spin"].text = "TRY"
+        
+        self.update_ui()
+
+# Oyunu başlat
+VaultGame()
+</script>
+</body>
+</html>
